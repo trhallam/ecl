@@ -55,48 +55,62 @@ before giving up completely.
 """
 import os.path
 import sys
+import platform
 
 import warnings
 
 warnings.filterwarnings(
-    action='always',
+    action="always",
     category=DeprecationWarning,
-    module=r'ecl|ert',
+    module=r"ecl|ert",
 )
 
 from cwrap import Prototype
 
-ECL_LEGACY_INSTALLED = not os.path.isdir(os.path.join(os.path.dirname(__file__), ".libs"))
+if platform.system() == "Windows":
+    dll_dir = ".bin"
+else:
+    dll_dir = ".libs"
+ECL_LEGACY_INSTALLED = not os.path.isdir(
+    os.path.join(os.path.dirname(__file__), dll_dir)
+)
+
 if not ECL_LEGACY_INSTALLED:
     from .version import version as __version__
-
 
     def get_include():
         return os.path.join(os.path.dirname(__file__), ".include")
 
-
     def dlopen_libecl():
         import ctypes
-        import platform
 
         path = os.path.join(os.path.dirname(__file__), ".libs")
+        winmode = None
         if platform.system() == "Linux":
             path = os.path.join(path, "libecl.so")
         elif platform.system() == "Darwin":
             path = os.path.join(path, "libecl.dylib")
         elif platform.system() == "Windows":
             path = os.path.join(os.path.dirname(__file__), ".bin", "libecl.dll")
+            os.environ["ECL_SKIP_SIGNAL"] = "True"
+            # check for zlib
+            try:
+                zlib_path = os.path.join(sys.exec_prefix, "Library", "bin", "zlib.dll")
+                ctypes.OleDLL(zlib_path)
+            except ImportError:
+                raise ImportError(f"Missing zlib.dll could not be found {zlib_path}")
         else:
             raise NotImplementedError("Invalid platform")
 
-        return ctypes.CDLL(path, ctypes.RTLD_GLOBAL)
-
+        return ctypes.CDLL(path, ctypes.RTLD_GLOBAL)  # , winmode=winmode)
 
     class EclPrototype(Prototype):
         lib = dlopen_libecl()
 
         def __init__(self, prototype, bind=True):
             super(EclPrototype, self).__init__(EclPrototype.lib, prototype, bind=bind)
+
+
 else:
     #
     # If installed via CMake directly (legacy)
@@ -108,13 +122,11 @@ else:
     except ImportError:
         pass
 
-
     required_version_hex = 0x02070000
 
     ecl_lib_path = None
     ert_so_version = ""
     __version__ = "0.0.0"
-
 
     # 1. Try to load the __ecl_lib_info module; this module has been
     #    configured by cmake during the build configuration process. The
@@ -122,6 +134,7 @@ else:
     #    directory with shared object files.
     try:
         from .__ecl_lib_info import EclLibInfo
+
         ecl_lib_path = EclLibInfo.lib_path
         ert_so_version = EclLibInfo.so_version
         __version__ = EclLibInfo.__version__
@@ -130,26 +143,29 @@ else:
     except AttributeError:
         pass
 
-
     # 2. Using the environment variable ERT_LIBRARY_PATH it is possible to
     #    override the default algorithms. If the ERT_LIBRARY_PATH is set
     #    to a non existing directory a warning will go to stderr and the
     #    setting will be ignored.
     env_lib_path = os.getenv("ERT_LIBRARY_PATH")
     if env_lib_path:
-        if os.path.isdir( env_lib_path ):
+        if os.path.isdir(env_lib_path):
             ert_lib_path = os.getenv("ERT_LIBRARY_PATH")
         else:
-            sys.stderr.write("Warning: Environment variable ERT_LIBRARY_PATH points to nonexisting directory:%s - ignored" % env_lib_path)
-
+            sys.stderr.write(
+                "Warning: Environment variable ERT_LIBRARY_PATH points to nonexisting directory:%s - ignored"
+                % env_lib_path
+            )
 
     # Check that the final ert_lib_path setting corresponds to an existing
     # directory.
     if ecl_lib_path:
         if not os.path.isabs(ecl_lib_path):
-            ecl_lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ecl_lib_path))
+            ecl_lib_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), ecl_lib_path)
+            )
 
-        if not os.path.isdir( ecl_lib_path ):
+        if not os.path.isdir(ecl_lib_path):
             ecl_lib_path = None
 
     if sys.hexversion < required_version_hex:
@@ -160,7 +176,7 @@ else:
             return cwrapload(name, path=ecl_lib_path, so_version=ert_so_version)
         except ImportError:
             # For pip installs, setup.py puts the shared lib in this directory
-            own_dir=os.path.dirname(os.path.abspath(__file__))
+            own_dir = os.path.dirname(os.path.abspath(__file__))
             return cwrapload(name, path=own_dir, so_version=ert_so_version)
 
     class EclPrototype(Prototype):
@@ -169,21 +185,29 @@ else:
         def __init__(self, prototype, bind=True):
             super(EclPrototype, self).__init__(EclPrototype.lib, prototype, bind=bind)
 
+
 #
 # Common
 #
 
 from .ecl_type import EclTypeEnum, EclDataType
-from .ecl_util import EclFileEnum, EclFileFlagEnum, EclPhaseEnum, EclUnitTypeEnum , EclUtil
+from .ecl_util import (
+    EclFileEnum,
+    EclFileFlagEnum,
+    EclPhaseEnum,
+    EclUnitTypeEnum,
+    EclUtil,
+)
 
 from .util.util import EclVersion
 from .util.util import updateAbortSignals
 
 
-updateAbortSignals( )
+updateAbortSignals()
+
 
 def root():
     """
     Will print the filesystem root of the current ert package.
     """
-    return os.path.abspath( os.path.join( os.path.dirname( __file__ ) , "../"))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
